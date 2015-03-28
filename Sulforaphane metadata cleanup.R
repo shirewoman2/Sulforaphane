@@ -1,5 +1,5 @@
 # Sulforaphane metadata cleanup
-# 10/9/14 LS
+# 3/27/14 LS
 
 # Housekeeping =========================================================
 library(ggplot2)
@@ -30,9 +30,93 @@ TauriCefs <- data.frame(File2 = TauriCefs2,
 
 # write.csv(TauriCefs, "cefs Tauri made.csv", row.names = F)
 
-
 # Samples and Files ====================================================
+# All .d files we have
+setwd("G:/Data/Metabolomics/Laura/Sulforaphane project/All SFN d files")
+Files <- read.xlsx("All SFN d files known 20150327.xlsx", sheetName = "Sheet1", 
+               startRow = 2)
+names(Files) <- c("Sample", "File", "DateTime")
+
+# Removing .d to match file names elsewhere
+Files$File <- sub(".d", "", Files$File)
+
+# Sample type
+Files$SampType <- "clinical"
+Files$SampType[str_detect(Files$Sample, "QC")] <- "QC"
+Files$SampType[str_detect(Files$Sample, "Master QC")] <- "Master QC"
+Files$SampType[str_detect(Files$Sample, "blank")] <- "blank"
+Files$SampType[str_detect(Files$Sample, "IS")] <- "blank"
+Files$SampType[str_detect(Files$Sample, "water")] <- "water"
+
+# Subject
+Files$Subject <- str_extract(Files$Sample, " [0-9]{4} |^[0-9]{4} |^[0-9]{4}$")
+Files$Subject[Files$SampType != "clinical"] <- NA
+Files$Subject <- str_trim(Files$Subject)
+
+# Sample
+Files$SampCode <- str_extract(Files$Sample, " [0-9]{3} | [0-9]{3}$")
+Files$SampCode <- str_trim(Files$SampCode)
+
 setwd(MainDir)
+Wklst20111201 <- read.xlsx("20111201 sulforaphane plasma ESI- worklist.xlsx",
+                           sheetName = "Sheet1")
+
+# Matching up the missing sample codes from this worklist.
+Wklst20111201 <- plyr::rename(Wklst20111201, c("File.name" = "File"))
+Files <- join(Files, Wklst20111201[, c("File", "Sample.Code")], by = "File")
+rm(Wklst20111201)
+
+for (i in 1:nrow(Files)){
+      if(is.na(Files$SampCode[i])){
+            Files$SampCode[i] <- Files$Sample.Code[i]
+      }
+}
+
+Files$Sample.Code <- NULL
+
+# All metadata ---------------------------------------------------
+setwd(MainDir)
+Meta <- read.xlsx("All sulforaphane sample metadata v3.xlsx", 
+                  sheetName = "metabolomics runs and metadata", 
+                  endRow = 958)
+names(Meta) <- c("File", "Use", "TimeDate", "Mode", "Matrix", "SampType",
+                 "SampleID", "Subject", "Order", "SampCode", "EffectABC",
+                 "Effector", "Day", "TimePt.code", "TimePt", "MDZCL",
+                 "Gender", "Age", "Ethnicity", "Hispanic", "Height", 
+                 "Weight", "BMI")
+Meta$Use <- revalue(Meta$Use, c(" file not found" = "missing file",
+                                "acceptable" = "use"))
+Meta <- arrange(Meta, File)
+Files <- arrange(Files, File)
+
+FilesMissingFromFiles <- Meta[!(Meta$File %in% Files$File), ]
+FilesMissingFromMeta <- Files[!(Files$File %in% Meta$File), ]
+
+
+
+
+
+setdiff(Meta$File, Files$File)
+
+
+
+Compare <- join(Files, Meta, by = "File", type = "full")
+Compare <- arrange(Compare, File)
+
+unique(Meta$Use)
+
+Compare$Use[Compare$File[setdiff(Meta$File, Files$File)]]
+
+# Subjects -----------------------------------------------------------
+
+
+
+
+
+
+
+
+
 
 # All possible files that I know of (checking on whether these match
 # what Tauri has)
