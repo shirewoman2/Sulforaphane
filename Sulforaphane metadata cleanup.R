@@ -12,10 +12,6 @@ library(lubridate)
 library(xlsx)
 
 MainDir <- "C:/Users/Laura/Documents/Sulforaphane project"
-# OrigDir <- "H:/Data copied 09_2011_B/Sulphuraphane"
-# PosDir <- "F:/Sulforaphane/20110419 sulforaphane urine ESI+ and APCI+"
-# NegDir <- "F:/Sulforaphane/20110524 sulforaphane urine ESI-"
-
 
 
 # SFN urine: Files it appears Tauri used ===================================
@@ -26,7 +22,9 @@ setwd("H:/Data copied 09_2011_B/Sulphuraphane")
 TauriCefs <- list.files(pattern = ".cef$")
 TauriCefs2 <- gsub("_1.cef", ".cef", TauriCefs)
 TauriCefs <- data.frame(File2 = TauriCefs2, 
-                        Used = "yes")
+                        TauriUsed = "yes")
+TauriCefs$File <- sub(".cef", "", TauriCefs$File2)
+TauriCefs <- unique(TauriCefs)
 
 # write.csv(TauriCefs, "cefs Tauri made.csv", row.names = F)
 
@@ -35,7 +33,8 @@ TauriCefs <- data.frame(File2 = TauriCefs2,
 setwd("G:/Data/Metabolomics/Laura/Sulforaphane project/All SFN d files")
 Files <- read.xlsx("All SFN d files known 20150327.xlsx", sheetName = "Sheet1", 
                startRow = 2)
-names(Files) <- c("Sample", "File", "DateTime")
+names(Files) <- c("Sample", "File", "DateTime", "Method")
+Files <- unique(Files)
 
 # Removing .d to match file names elsewhere
 Files$File <- sub(".d", "", Files$File)
@@ -43,10 +42,10 @@ Files$File <- sub(".d", "", Files$File)
 # Sample type
 Files$SampType <- "clinical"
 Files$SampType[str_detect(Files$Sample, "QC")] <- "QC"
-Files$SampType[str_detect(Files$Sample, "Master QC")] <- "Master QC"
+Files$SampType[str_detect(Files$Sample, "[Mm]aster QC")] <- "Master QC"
 Files$SampType[str_detect(Files$Sample, "blank")] <- "blank"
 Files$SampType[str_detect(Files$Sample, "IS")] <- "blank"
-Files$SampType[str_detect(Files$Sample, "water")] <- "water"
+Files$SampType[str_detect(Files$Sample, "[Ww]ater")] <- "water"
 
 # Subject
 Files$Subject <- str_extract(Files$Sample, " [0-9]{4} |^[0-9]{4} |^[0-9]{4}$")
@@ -54,7 +53,8 @@ Files$Subject[Files$SampType != "clinical"] <- NA
 Files$Subject <- str_trim(Files$Subject)
 
 # Sample
-Files$SampCode <- str_extract(Files$Sample, " [0-9]{3} | [0-9]{3}$")
+Files$SampCode <- str_extract(Files$Sample, " [0-9]{3} | [0-9]{3}$|[0-9]{3}-")
+Files$SampCode <- sub("-", "", Files$SampCode)
 Files$SampCode <- str_trim(Files$SampCode)
 
 setwd(MainDir)
@@ -74,194 +74,197 @@ for (i in 1:nrow(Files)){
 
 Files$Sample.Code <- NULL
 
-# All metadata ---------------------------------------------------
+# Any missing sample codes for clinical samples?
+NoSampCode <- subset(Files, is.na(SampCode) & SampType == "clinical")
+# I have no information anywhere that I can find for the file "20110526U-_001".
+# This was one that Tauri ran, so I'll need to ask him about it later. The 
+# sample column just says "2". 
+
+Files$Mode[Files$Method %in% c("metabolomicsbotA.m", "metabolomicsbotAdivB.m",
+                               "metabolomics+ESI.m")] <- "Epos"
+Files$Mode[Files$Method == "metabolomicsnegESI.m"] <- "Eneg"
+Files$Mode[Files$Method == "metabolomicsAPCI.m"] <- "Apos"
+# 1 file was missing method, but it's in the middle of Epos injections.
+Files$Mode[Files$File == "20111110W+_001"] <- "Epos"
+
+# Runs
+Files$Run <- paste(Files$Mode, str_sub(Files$File, 1, 8), sep = ".")
+unique(Files$Run)
+
+# Matrix
+Files$Matrix[Files$Run %in% c("Epos.20100929", "Epos.20101109", 
+                              "Epos.20110419", "Epos.20110420",
+                              "Epos.20110421", "Eneg.20110525",
+                              "Eneg.20110526", "Eneg.20110524",
+                              "Epos.20110311", "Epos.20110422",
+                              "Eneg.20110531", "Apos.20110531",
+                              "Apos.20110601", "Apos.20110602",
+                              "Apos.20110060")] <- "urine"
+Files$Matrix[Files$Run %in% c("Epos.20111108", "Epos.20111109",
+                              "Epos.20111110", "Eneg.20111114",
+                              "Eneg.20111130", "Eneg.20111201",
+                              "Eneg.20111205")] <- "plasma"
+Files$Matrix[Files$SampType == "Master QC"] <- "urine"
+Files$Matrix[Files$SampType %in% c("blank", "water")] <- "water"
+
+# Adding sample ID
+Files$SampleID <- paste0("S", Files$Subject, ".", Files$SampCode, ".", 
+                         toupper(str_sub(Files$Matrix, 1,1)))
+Files$SampleID[Files$SampType != "clinical"] <- 
+      paste(toupper(str_sub(Files$SampType[Files$SampType != "clinical"], 
+                                1, 1)), 
+            rank(Files$DateTime[Files$SampType != "clinical"]), sep = ".")
+
+# Adding file and mode unique ID
+Files$SampModeMat <- paste(Files$SampleID, Files$Mode, Files$Matrix, sep = ".")
+
+# Noting which files Tauri used
+Files <- join(Files, TauriCefs[, c("TauriUsed", "File")], by = "File")
+setdiff(TauriCefs$File, Files$File)
+# Adding note about which files we should use
+Files$Use <- "use"
+
+Files <- arrange(Files, DateTime)
+
+# Runs df
+Runs <- unique(Files[Files$SampType == "clinical", c("Run", "Mode", "Matrix")])
+
+# Subjects & samples ---------------------------------------------------
 setwd(MainDir)
-Meta <- read.xlsx("All sulforaphane sample metadata v3.xlsx", 
-                  sheetName = "metabolomics runs and metadata", 
-                  endRow = 958)
-names(Meta) <- c("File", "Use", "TimeDate", "Mode", "Matrix", "SampType",
-                 "SampleID", "Subject", "Order", "SampCode", "EffectABC",
-                 "Effector", "Day", "TimePt.code", "TimePt", "MDZCL",
-                 "Gender", "Age", "Ethnicity", "Hispanic", "Height", 
-                 "Weight", "BMI")
-Meta$Use <- revalue(Meta$Use, c(" file not found" = "missing file",
-                                "acceptable" = "use"))
-Meta <- arrange(Meta, File)
-Files <- arrange(Files, File)
-
-FilesMissingFromFiles <- Meta[!(Meta$File %in% Files$File), ]
-FilesMissingFromMeta <- Files[!(Files$File %in% Meta$File), ]
+Subjects <- read.xlsx("All sulforaphane sample metadata v3.xlsx", 
+                  sheetName = "lookup", 
+                  rowIndex = 8:32, colIndex = 8:17)
+Subjects <- plyr::rename(Subjects, c("Height.cm" = "Height",
+                                     "Weight..Kg" = "Weight"))
 
 
+EffectCode <- read.xlsx("All sulforaphane sample metadata v3.xlsx", 
+                        sheetName = "lookup", 
+                        rowIndex = 2:6, colIndex = 8:9)
+EffectCode <- plyr::rename(EffectCode, c("Effector.code" = "TxCode"))
+EffectCode$EffectAbb <- c("BR", "B", "R")
 
 
+MDZ <- read.xlsx("All sulforaphane sample metadata v3.xlsx", 
+                 sheetName = "lookup", 
+                 rowIndex = 36:180, colIndex = 8:12)
+MDZ <- plyr::rename(MDZ, c("MDZ.Cl.calculated.by.Yvonne" = "MDZCL"))
+MDZ$MDZCL <- as.numeric(MDZ$MDZCL)
+MDZ$Sample <- NULL
 
-setdiff(Meta$File, Files$File)
+# Making samples data.frame
+Samples <- data.frame(Subject = rep(Subjects$Subject),
+                      SampCode = rep(paste0(rep(1:3, each = 2), rep(c(1,8), 3), 
+                                            rep(c(0,1), each = 6)),
+                                     each = length(Subjects$Subject)))
 
+# Extracting out which treatment each sample was based on the codes
+Samples$TxNum <- as.numeric(str_sub(Samples$SampCode, 1, 1))
+Samples <- join(Samples, Subjects[, c("Subject", "Order")], by = "Subject")
+Samples$TxCode <- str_sub(Samples$Order, Samples$TxNum, Samples$TxNum)
+Samples <- join(Samples, EffectCode, by = "TxCode")
 
+# Matrix
+Samples$Matrix[str_detect(Samples$SampCode, "0$")] <- "plasma"
+Samples$Matrix[str_detect(Samples$SampCode, "1$")] <- "urine"
 
-Compare <- join(Files, Meta, by = "File", type = "full")
-Compare <- arrange(Compare, File)
+# Treatment day
+Samples$Day <- str_sub(Samples$SampCode, 2, 2)
 
-unique(Meta$Use)
+# Sometimes didn't have the right sample and had to use a different one.
+# Noting that.
+Samples$SampCode[Samples$Subject == 2233 & Samples$TxNum == 1 &
+                       Samples$Day == 1 & Samples$Matrix == "plasma"] <- "111"
 
-Compare$Use[Compare$File[setdiff(Meta$File, Files$File)]]
+# Time point
+Samples$TimePt.code <- str_sub(Samples$SampCode, 3,3)
+Samples$TimePt[Samples$TimePt.code == "0"] <- "baseline"
+Samples$TimePt[Samples$TimePt.code == "1" & 
+                     Samples$Matrix == "urine"] <- "0-6 hr"
+Samples$TimePt[Samples$TimePt.code == "1" & 
+                     Samples$Matrix == "plasma"] <- "15 min"
 
-# Subjects -----------------------------------------------------------
+# Adding MDZ CL info
+Samples <- join(Samples, MDZ, by = c("Subject", "Effector", "Day"))
 
-
-
-
-
-
-
-
-
-
-# All possible files that I know of (checking on whether these match
-# what Tauri has)
-Samples <- read.csv("SFN metadata.csv", na.strings = c("Has not run", "ND"),
-                    skip = 1)
-Samples <- Samples[, c("Subject", "SampleCode", "Effector", "Day", 
-                       "TimePoint", "Matrix", "MDZCL", "Gender",
-                       "DatePrepped", "File.Epos", "Date.Epos", "File.Eneg",
-                       "Date.Eneg", "File.Apos", "Date.Apos")]
-Samples$TimePoint[Samples$TimePoint == "" & Samples$Matrix == "plasma"] <- 
-      "5 min"
-
-Samples$SampleID <- paste(paste0("S", Samples$Subject), 
-                          Samples$Effector,
-                          Samples$Day, 
-                          Samples$TimePoint, 
-                          Samples$Matrix, sep = ".")
-Samples$SampleID <- sub("brocco/rif", "BR", Samples$SampleID)
-Samples$SampleID <- sub("brocco", "B", Samples$SampleID)
-Samples$SampleID <- sub("rif", "R", Samples$SampleID)
-
-Samples$SampleID <- sub("baseline", "BL", Samples$SampleID)
-Samples$SampleID <- sub("0-6 hrs", "06", Samples$SampleID)
-Samples$SampleID <- sub("6-24 hrs", "624", Samples$SampleID)
-Samples$SampleID <- sub("5 min", "5", Samples$SampleID)
-
-Samples$SampleID <- sub("plasma", "P", Samples$SampleID)
-Samples$SampleID <- sub("urine", "U", Samples$SampleID)
-
-Samples$SampleID.code <- paste("S", Samples$Subject, Samples$SampleCode, 
-                               Samples$Matrix, sep = ".")
-
-# Removing samples we never ran at all
-NeverRan <- Samples[is.na(Samples$File.Epos) & 
-                          is.na(Samples$File.Eneg) &
-                          is.na(Samples$File.Apos), ]
-
-Samples <- Samples[!(Samples$SampleID.code %in% NeverRan$SampleID.code), ]
-
-Files <- Samples[, c("Subject", "Matrix", "DatePrepped", "File.Epos",
-                     "File.Eneg", "File.Apos", "Date.Epos", "Date.Eneg", 
-                     "Date.Apos", "SampleID", "SampleID.code")] %>% 
-      gather(key, value, -Subject, -Matrix, -DatePrepped, -SampleID,
-             -SampleID.code) %>% 
-      # Separate the key into components type and mode
-      separate(key, c("type", "Mode"), "\\.") %>%
-      # Spread the type back into the columns
-      spread(type, value)
-Files <- Files[complete.cases(Files$File), ]
-
-ddply(Files, c("Mode", "Matrix"), function(x) nrow(x))
-# Good. Have all the modes and matrices expected.
-
-# Checking that all the files exist.
-setwd("F:/Sulforaphane/All SFN mzdata files")
-Files$Exists <- file.exists(paste0(Files$File, ".mzdata.xml"))
-
-Missing <- subset(Files, Exists == FALSE & Mode != "Apos")
+# Unique identifier: SampleID
+Samples$SampleID <- paste0("S", Samples$Subject, ".", Samples$SampCode,
+                           ".", toupper(str_sub(Samples$Matrix, 1,1)))
 
 
-# Keeping in Samples df only columns that make sense to be there.
-Samples <- Samples[, c("Subject", "SampleCode", "Effector", "Day", "TimePoint",
-                       "Matrix", "SampleID", "SampleID.code", "MDZCL", "Gender")]
+# Checking data integrity ------------------------------------------
+# There should be 1 file in ESI+ and 1 in ESI- for
+# each of these samples. Checking. 
+ClinFiles <- arrange(Files[Files$SampType == "clinical" & Files$Use == "use", ], 
+                     SampleID, Matrix, Mode)
+FileCheck <- count(ClinFiles, SampModeMat)
+PossProbs <- subset(Files, SampModeMat %in% 
+                           FileCheck$SampModeMat[FileCheck$n != 1])
+PossProbs <- arrange(PossProbs, SampModeMat)
+PossProbs <- subset(PossProbs, Use == "use")
 
-# Checking for replicates
-which(duplicated(Samples$SampleID))
-# Good. No replicates.
+# Runs that appear to have been redone because they were problematic:
+BadRuns <- c("Epos.20100929", "Epos.20110311", "Eneg.20111114")
+Files$Use[Files$Run %in% BadRuns] <- "do not use"
+Files$Note[Files$Run %in% BadRuns] <- "appears to be a bad run"
 
+# Files acquired with the method "metabolomicsbotA.m" seem to be off. Removing them.
+Files$Use[Files$Method %in% 
+                c("metabolomicsbotA.m", "metabolomicsbotAdivB.m")] <- "do not use"
+Files$Note[Files$Method %in% 
+                 c("metabolomicsbotA.m", "metabolomicsbotAdivB.m")] <- "bad method"
+
+# Files where there are replicates
+ProbFiles <- c("20111201P-_005", "20111201P-_007", "20100929 ESI+ u_26",
+               "20111110P+_005", "20111110P+_007", "20111205P-_036", 
+               "20111205P-_038", "20111130P-_005", "20111130P-_007",
+               "20111130P-_012", "20111110P+_075", "20111110P+_077", 
+               "20111108P+_07", "20111108P+_09", "20111201P-_037",
+               "20111201P-_039", "20111110P+_037", "20111110P+_039",
+               "20111109P+_06", "20111109P+_08", "20111205P-_004", 
+               "20111205P-_006", "20101109 ESI+ b-04", "20110419U+_046b",
+               "20110601U+_040b", "20110525U-_006b", "20110601U+_001a",
+               "20110419U+_031b", "20110419U+_020b", "20110419U+_021b",
+               "20110524U-_039b", "20110531U-_001b", "20110524Q-_039",
+               "20110526U-_023b", "20110421U+_011b")
+Files$Use[Files$File %in% ProbFiles] <- "do not use"
+Files$Note[Files$File %in% ProbFiles] <- "replicate injection"
+
+# Files that were failed or weird injections 
+BadInj <- c("20110419U+_046", "20110420U+_042", "20110602U+_018")
+
+Files$Use[Files$File %in% BadInj] <- "do not use"
+Files$Note[Files$File %in% BadInj] <- "failed injection"
+
+
+# Checking again, now that I've removed problem injections.
+ClinFiles <- arrange(Files[Files$SampType == "clinical" & Files$Use == "use", ], 
+                     SampleID, Matrix, Mode)
+FileCheck <- count(ClinFiles, SampModeMat)
+PossProbs <- subset(Files, SampModeMat %in% 
+                           FileCheck$SampModeMat[FileCheck$n != 1])
+PossProbs <- arrange(PossProbs, SampModeMat)
+PossProbs <- subset(PossProbs, Use == "use")
+# No problems remain. Could still be missing files, though.
+
+# Adding sample info to Files df to check for missing files
+AllPossFiles <- join(Files, Samples[, c("Subject", "SampCode", "EffectAbb", "Day", 
+                                        "TimePt.code", "Matrix", "SampleID")], 
+                     by = c("Subject", "SampCode", "Matrix", "SampleID"), 
+                     type = "full")
+AllPossFiles <- arrange(AllPossFiles, SampleID)
+
+# Samples that have no files
+MissingFiles <- subset(AllPossFiles, is.na(File))
+
+# Checking how many samples have 2 files that we SHOULD use in Epos and Eneg
+SampCheck <- count(subset(Files, Use == "use" & SampType == "clinical" &
+                                Mode %in% c("Epos", "Eneg")), 
+                   SampleID)
+# Missing some samples still. Will have to look into this later.
 
 # Saving main metadata --------------------------------------------
 setwd(MainDir)
-save(Files, Samples, file = "SFN metadata.RData")
-
-# Making DAReprocessor worklist ===========================================
-Worklist <- read.xlsx2("Sulforaphane urine worklists.xlsx", 
-                       sheetName = "worklists", 
-                       colClasses = rep("character", 5),
-                       stringsAsFactors = FALSE)
-
-Worklist$File2 <- gsub("d", "cef", basename(Worklist$File))
-
-Worklist <- join(Worklist, TauriCefs, by = "File2", type = "left")
-
-Worklist$Subject <- rep(NA, nrow(Worklist))
-
-Clin <- which(str_detect(Worklist$Sample, "Subject"))
-
-for (i in Clin){
-      Worklist$Subject[i] <- str_sub(Worklist$Sample[i],
-                                     str_locate(Worklist$Sample[i], 
-                                                "Subject")[2]+2,
-                                     str_locate(Worklist$Sample[i],
-                                                "Subject")[2]+5)
-}
-
-Worklist$SampleType <- rep(NA, nrow(Worklist))
-Worklist$SampleType[Clin] <- "clinical"
-
-QC <- which(str_detect(Worklist$Sample, "QC"))
-Worklist$SampleType[QC] <- "QC"
-
-MasterQC <- which(str_detect(Worklist$Sample, "Master QC"))
-Worklist$SampleType[MasterQC] <- "Master QC"
-
-Worklist$Sample2 <- rep(NA, nrow(Worklist))
-
-for (i in Clin){
-      Worklist$Sample2[i] <- str_sub(Worklist$Sample[i],
-                                     str_locate(Worklist$Sample[i], 
-                                                "Subject")[2]+9,
-                                     str_locate(Worklist$Sample[i],
-                                                "Subject")[2]+11)
-}
-
-Worklist$Dataset <- rep(NA, nrow(Worklist))
-Worklist$Dataset[Worklist$Method == "metabolomics+ESI.m"] <- "EposU"
-Worklist$Dataset[Worklist$Method == "metabolomicsnegESI.m"] <- "EnegU"
-Worklist$Dataset[Worklist$Method == "metabolomicsAPCI.m"] <- "AposU"
-
-
-# Checking to see if there are any clinical samples that were NOT used before 
-# that are in the worklists. 
-which(is.na(Worklist$Used) & Worklist$SampleType == "Clin")
-# good!
-
-Worklist$SampleID <- paste(Worklist$Subject, Worklist$Sample2)
-
-Worklist$File3 <- rep(NA, nrow(Worklist))
-Worklist$File3[Worklist$Dataset == "EposU" | Worklist$Dataset == "AposU"] <- 
-      paste0("F:\\Sulforaphane\\20110419 sulforaphane urine ESI+ and APCI+\\", 
-                         basename(Worklist$File[Worklist$Dataset == "EposU" | 
-                                                      Worklist$Dataset == 
-                                                      "AposU"]))
-
-Worklist$File3[Worklist$Dataset == "EnegU"] <- 
-                     paste0("F:\\Sulforaphane\\20110524 sulforaphane urine ESI-\\", 
-             basename(Worklist$File[Worklist$Dataset == "EnegU"]))
-
-DAReproc <- Worklist[Worklist$SampleType %in% c("clinical", "Master QC", "QC"), 
-                     c("Sample", "Vial.position", "Method", "File3")]
-DAReproc$Method <- rep("C:\\Users\\Laura\\Documents\\MassHunter methods\\General mzData export - 500 count peak height.m",
-                       nrow(DAReproc))
-
-write.csv(DAReproc, "20141010 DAReprocessor worklist for SFN urine.csv", 
-          row.names = FALSE)
-
+save(Files, Samples, Subjects, Runs, file = "SFN metadata.RData")
 
 
