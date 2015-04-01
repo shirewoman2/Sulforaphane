@@ -304,9 +304,11 @@ rm(Count.df)
 write.csv(SulfEposP8.filter, 
           "SulfEposP8 peak table - mass features must be present in at least 25% of all samples.csv")
 
-setwd(RawDataDir)
-# Saving the workspace up to here. 
-save.image("SulfEposP8 workspace.RData")
+setwd(MainDir)
+save(SulfEposP8.after2, SulfEposP8.allpeaks, SulfEposP8.filter, SulfEposP8.noref,
+     SulfEposP8.unfilled, file = "SulfEposP8 - all main dataframes.RData")
+save(SulfEposP8.filter, file = "SulfEposP8 - filtered dataframe only.RData")
+
 
 tPeakTable.final <- Sys.time()
 tPeakTable <- as.numeric(difftime(tPeakTable.final, tPeakTable.init, 
@@ -662,6 +664,7 @@ ggsave("SulfEposP8 bar chart of numbers of mass features at each step.png")
 
 # Saving final workspace ------------------------------
 setwd(RawDataDir)
+save(SulfEposP8.filledpeaks, file = "SulfEposP8 xcmsSet object.RData")
 save.image("SulfEposP8 workspace.RData") # This saves EVERYTHING that is currently
 # in your workspace, which is a pretty huge file. Skip this step if you don't 
 # think you'll need that. 

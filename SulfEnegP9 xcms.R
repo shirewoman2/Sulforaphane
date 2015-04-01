@@ -299,9 +299,10 @@ rm(Count.df)
 write.csv(SulfEnegP9.filter, 
           "SulfEnegP9 peak table - mass features must be present in at least 25% of all samples.csv")
 
-setwd(RawDataDir)
-# Saving the workspace up to here. 
-save.image("SulfEnegP9 workspace.RData")
+setwd(MainDir)
+save(SulfEnegP9.after2, SulfEnegP9.allpeaks, SulfEnegP9.filter, SulfEnegP9.noref,
+     SulfEnegP9.unfilled, file = "SulfEnegP9 - all main dataframes.RData")
+save(SulfEnegP9.filter, file = "SulfEnegP9 - filtered dataframe only.RData")
 
 tPeakTable.final <- Sys.time()
 tPeakTable <- as.numeric(difftime(tPeakTable.final, tPeakTable.init, 
@@ -657,6 +658,7 @@ ggsave("SulfEnegP9 bar chart of numbers of mass features at each step.png")
 
 # Saving final workspace ------------------------------
 setwd(RawDataDir)
+save(SulfEnegP9.filledpeaks, file = "SulfEnegP9 xcmsSet object.RData")
 save.image("SulfEnegP9 workspace.RData") # This saves EVERYTHING that is currently
 # in your workspace, which is a pretty huge file. Skip this step if you don't 
 # think you'll need that. 
