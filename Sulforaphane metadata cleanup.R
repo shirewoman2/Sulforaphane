@@ -120,9 +120,12 @@ Files$SampModeMat <- paste(Files$SampleID, Files$Mode, Files$Matrix, sep = ".")
 
 # Noting which files Tauri used
 Files <- join(Files, TauriCefs[, c("TauriUsed", "File")], by = "File")
-setdiff(TauriCefs$File, Files$File)
+
 # Adding note about which files we should use
 Files$Use <- "use"
+
+# Adding a column to files that will match the output column name from xcms
+Files$SampCol <- make.names(paste0(Files$File, ".mzdata"))
 
 Files <- arrange(Files, DateTime)
 
