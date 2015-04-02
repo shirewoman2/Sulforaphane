@@ -46,21 +46,23 @@ names(Data.filtered) <- Dataset
 setwd(MainDir)
 load("SFN metadata.RData")
 
-GoodFiles <- subset(Files, Use == "use" & SampType %in% c("clinical"), ### CHANGE THIS FOR TEMPLATE SCRIPT
+Files <- join(Files, Datasets, by = c("Mode", "Matrix"))
+GoodFiles <- subset(Files, Use == "use" & SampType %in% c("clinical"), 
                     c("SampleID", "File", "Subject", "SampCode", "SampType",
-                      "Mode", "Matrix", "SampModeMat", "SampCol"))
-GoodFiles <- join(GoodFiles, Datasets, by = c("Mode", "Matrix"))
+                      "Mode", "Matrix", "SampModeMat", "SampCol", "Dataset",
+                      "Run"))
+
 
 # Breaking up by Dataset for matching elsewhere in script
 GoodFiles <- dlply(GoodFiles, "Dataset")
 
-Samples <- list()
+GoodSamples <- list()
 ClinSamples <- list()
 
 # Selecting only the columns of interest in the data and renaming them sensibly
 for (j in Dataset){
       
-      Samples[[j]] <- GoodFiles[[j]]$SampleID
+      GoodSamples[[j]] <- GoodFiles[[j]]$SampleID
       ClinSamples[[j]] <- GoodFiles[[j]]$SampleID[
             GoodFiles[[j]]$SampType == "clinical"]
       
@@ -113,7 +115,7 @@ my.write <- function(x, file, header, f = write.csv, ...){
 # Processing the data ----------------------------------------------
 
 # Starting from data that were already filtered by frequency to retain ions 
-# detected initially in >= 25% of all samples. 
+# detected initially in >= 25% of all GoodSamples. 
 
 Hist <- list()
 Data.TCCnorm <- list()
@@ -122,19 +124,19 @@ Data.log <- list()
 for (j in Dataset){
       
       # Adding 1 to all sample columns
-      Data.filtered[[j]][ , Samples[[j]]] <- 
-            Data.filtered[[j]][ , Samples[[j]]] + 1
+      Data.filtered[[j]][ , GoodSamples[[j]]] <- 
+            Data.filtered[[j]][ , GoodSamples[[j]]] + 1
             
       # Calculate the TCC sum.
-      TCCsum <- apply(Data.filtered[[j]][ , Samples[[j]]], 
+      TCCsum <- apply(Data.filtered[[j]][ , GoodSamples[[j]]], 
                       2, sum, na.rm=TRUE)
       
       
       # Normalize each sample by the TCC sum. 
-      Data.TCCnorm[[j]] <- Data.filtered[[j]][ , Samples[[j]]]
-      for (s in 1:length(Samples[[j]])){
-            Data.TCCnorm[[j]][, Samples[[j]][s]] <- 
-                  (Data.filtered[[j]][, Samples[[j]][s]]/ 
+      Data.TCCnorm[[j]] <- Data.filtered[[j]][ , GoodSamples[[j]]]
+      for (s in 1:length(GoodSamples[[j]])){
+            Data.TCCnorm[[j]][, GoodSamples[[j]][s]] <- 
+                  (Data.filtered[[j]][, GoodSamples[[j]][s]]/ 
                          TCCsum[s])*1e6
             rm(s)
       }  
@@ -178,4 +180,32 @@ dev.off()
 
 save(Data.log, Directory, Dataset, file="SFN main data.RData")
 
+
+# PCA ----------------------------------------------------------
+# Checking for irregularities s/a run effects.
+
+PCA <- list()
+Data.PCA <- list()
+
+for (j in Dataset){
+      PCA[[j]] <- prcomp(t(Data.log[[j]][, GoodSamples[[j]]]), center = TRUE,
+                              scale = TRUE)
+      Data.PCA[[j]] <- data.frame(SampleID = GoodSamples[[j]],
+                                  PC1 = PCA[[j]]$x[, 1],
+                                  PC2 = PCA[[j]]$x[, 2],
+                                  PC3 = PCA[[j]]$x[, 3])
+      Data.PCA[[j]] <- join(Data.PCA[[j]], GoodFiles[[j]], by = "SampleID", 
+                            type = "left")
+}
+
+Data.PCA <- ldply(Data.PCA)
+Data.PCA <- join(Data.PCA, Samples, by = "SampleID")
+
+ggplot(Data.PCA, aes(x = PC1, y = PC2, color = Run)) +
+      geom_point() +
+      facet_wrap(~ Dataset, scales = "free")
+
+ggplot(Data.PCA, aes(x = PC1, y = PC2, color = Effector)) +
+      geom_point() +
+      facet_wrap(~ Dataset, scales = "free")
 
