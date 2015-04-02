@@ -91,11 +91,6 @@ GoodSamples <- paste0(Files$File[Files$Mode == "Eneg" &
 # Getting the names of the output data.frames' sample columns
 SampCol <- sub("mzdata.xml", "mzdata", make.names(GoodSamples))
 
-# Getting the name of the column that will contain the number of times
-# an ion was detected.
-CountCol <- make.names(basename(RawDataDir))
-
-
 
 # General functions ----------------------------------------------
 ThemeLaura <- function (base_size = 12, base_family = "") {
@@ -224,7 +219,8 @@ dev.off()
 setwd(RawDataDir)
 
 SFNEnegU11.tretcor.final <- Sys.time()
-SFNEnegU11.tretcor <- as.numeric(difftime(SFNEnegU11.tretcor.final, SFNEnegU11.tretcor.init, units="mins"))
+SFNEnegU11.tretcor <- as.numeric(
+      difftime(SFNEnegU11.tretcor.final, SFNEnegU11.tretcor.init, units="mins"))
 write.csv(SFNEnegU11.tretcor, "SFNEnegU11 tretcor.csv")
 
 # Peak align the RT-corrected data -----------------------------------------
@@ -252,6 +248,9 @@ SFNEnegU11.tfillPeaks.init <- Sys.time()
 # Recursively filling all detected peaks
 SFNEnegU11 <- fillPeaks(SFNEnegU11)
 
+# Saving main object
+save(SFNEnegU11, file = "SFNEnegU11 xcmsSet object.RData")
+
 SFNEnegU11.tfillPeaks.final <- Sys.time()
 SFNEnegU11.tfillPeaks <- as.numeric(difftime(SFNEnegU11.tfillPeaks.final, 
                                            SFNEnegU11.tfillPeaks.init, 
@@ -264,8 +263,12 @@ SFNEnegU11.tPeakTable.init <- Sys.time()
 # Making a data.frame of the recursively filled data
 SFNEnegU11.allpeaks <- peakTable(SFNEnegU11)
 
-# Changing the name of the count column
-names(SFNEnegU11.allpeaks)[names(SFNEnegU11.allpeaks) == CountCol] <- "Count"
+# Setting up a function to count length of columns with 0 or NA in the 
+# data before recursive peak filling step
+Detected <- function(x) {length(x) - length(which(is.na(x) | x == 0))}
+# Counting
+SFNEnegU11.allpeaks$Count <- apply(SFNEnegU11.unfilled[, SampCol], 
+                                   MARGIN = 1, FUN = Detected)
 
 # Making a column with the mass feature name
 SFNEnegU11.allpeaks$MassFeature <- paste("I", round((
@@ -487,7 +490,6 @@ ggsave("SFNEnegU11 bar chart of numbers of mass features at each step.png")
 
 # Saving final workspace ------------------------------
 setwd(MainDir)
-save(SFNEnegU11, file = "SFNEnegU11 xcmsSet object.RData")
 # save.image("SFNEnegU11 workspace.RData") # This saves EVERYTHING that is 
 # currently in your workspace, which is a pretty huge file. Skip this step if 
 # you don't think you'll need that. 
